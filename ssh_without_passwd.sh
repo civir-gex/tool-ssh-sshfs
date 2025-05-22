@@ -6,20 +6,74 @@ clear
 if [ "$#" -lt 1 ]; then
     echo "Uso:"
     echo "  Para conexión SSH: $0 usuario@servidor"
-    echo "  Para montar SSHFS: $0 usuario@servidor carpeta_remota"
-    echo "  Para desmontar y limpiar: $0 usuario@servidor --cleanup"
+    echo "  Para montar SSHFS: $0 usuario@servidor carpeta_remota [nombre_personalizado]"
+    echo "  Para desmontar y limpiar: $0 usuario@servidor --cleanup [nombre_personalizado]"
     exit 1
 fi
 
 USR_SRV=$1
 SrvRemoto=$(echo "$USR_SRV" | cut -d@ -f2)
-MOUNT_POINT="/mnt/SSHFS/$SrvRemoto"
-SERVICE_NAME="sshfs-$SrvRemoto.service"
+
+# Si solo hay 1 argumento, abre conexión SSH y termina
+if [ "$#" -eq 1 ]; then
+    echo "Verificando conectividad con $USR_SRV..."
+    ping -c 1 -W 2 "$SrvRemoto" > /dev/null
+    if [ $? -ne 0 ]; then
+        echo "Error: No se puede contactar al servidor $USR_SRV"
+        exit 1
+    fi
+
+    KEY_PATH="$HOME/.ssh/id_rsa"
+    if [ ! -f "$KEY_PATH" ]; then
+        echo "No existe clave SSH, creando una..."
+        ssh-keygen -t rsa -b 4096 -f "$KEY_PATH" -N ""
+    fi
+
+    echo "Verificando si se puede conectar sin contraseña..."
+    ssh -o BatchMode=yes -o ConnectTimeout=5 "$USR_SRV" 'exit' 2>/dev/null
+    if [ $? -ne 0 ]; then
+        echo "No se puede conectar sin contraseña. Copiando clave pública al servidor..."
+        ssh-copy-id "$USR_SRV"
+        if [ $? -ne 0 ]; then
+            echo "Error: No se pudo copiar la clave pública. Verifica acceso SSH y vuelve a intentar."
+            exit 1
+        fi
+    else
+        echo "Conexión sin contraseña verificada correctamente."
+    fi
+
+    echo "✅ Validaciones completadas correctamente."
+    echo "Conectando a $USR_SRV..."
+    ssh "$USR_SRV"
+    exit $?
+fi
+
+REMOTE_DIR=$2
+CUSTOM_NAME=$3
+
+if [[ "$REMOTE_DIR" == "--cleanup" ]]; then
+    CUSTOM_NAME=$2
+    REMOTE_DIR=""
+fi
+
+if [ -z "$CUSTOM_NAME" ]; then
+    read -p "📂 Ingresa el nombre para la carpeta de montaje (Enter para usar '$SrvRemoto'): " INPUT_NAME
+    if [ -z "$INPUT_NAME" ]; then
+        MOUNT_NAME="$SrvRemoto"
+    else
+        MOUNT_NAME="$INPUT_NAME"
+    fi
+else
+    MOUNT_NAME="$CUSTOM_NAME"
+fi
+
+MOUNT_POINT="/mnt/SSHFS/$MOUNT_NAME"
+SERVICE_NAME="sshfs-$MOUNT_NAME.service"
 SERVICE_PATH="/etc/systemd/system/$SERVICE_NAME"
 
 # Modo cleanup
 if [[ "$2" == "--cleanup" ]]; then
-    echo "🧹 Iniciando limpieza para $SrvRemoto..."
+    echo "🧹 Iniciando limpieza para $MOUNT_NAME..."
 
     if systemctl list-units --all | grep -q "$SERVICE_NAME"; then
         echo "🔌 Deteniendo servicio systemd..."
@@ -57,7 +111,6 @@ if [[ "$2" == "--cleanup" ]]; then
     exit 0
 fi
 
-# Verifica si el servidor está en línea
 echo "Verificando conectividad con $USR_SRV..."
 ping -c 1 -W 2 "$SrvRemoto" > /dev/null
 if [ $? -ne 0 ]; then
@@ -65,14 +118,12 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Verifica si existe una clave SSH
 KEY_PATH="$HOME/.ssh/id_rsa"
 if [ ! -f "$KEY_PATH" ]; then
     echo "No existe clave SSH, creando una..."
     ssh-keygen -t rsa -b 4096 -f "$KEY_PATH" -N ""
 fi
 
-# Verifica conexión sin contraseña
 echo "Verificando si se puede conectar sin contraseña..."
 ssh -o BatchMode=yes -o ConnectTimeout=5 "$USR_SRV" 'exit' 2>/dev/null
 if [ $? -ne 0 ]; then
@@ -88,16 +139,12 @@ fi
 
 echo "✅ Validaciones completadas correctamente."
 
-# Si solo hay 1 argumento, abre conexión SSH y termina
 if [ "$#" -eq 1 ]; then
     echo "Conectando a $USR_SRV..."
     ssh "$USR_SRV"
     exit $?
 fi
 
-REMOTE_DIR=$2
-
-# Verifica si sshfs está instalado
 if ! command -v sshfs &> /dev/null; then
     echo "sshfs no está instalado. Intentando instalarlo..."
     if command -v apt &> /dev/null; then
@@ -112,7 +159,6 @@ if ! command -v sshfs &> /dev/null; then
     fi
 fi
 
-# Crea punto de montaje local si no existe
 if [ ! -d "$MOUNT_POINT" ]; then
     echo "Creando punto de montaje en $MOUNT_POINT..."
     sudo mkdir -p "$MOUNT_POINT"
@@ -121,7 +167,6 @@ else
     echo "El punto de montaje $MOUNT_POINT ya existe."
 fi
 
-# Verifica si ya está montado
 if mount | grep -q "on $MOUNT_POINT type fuse.sshfs"; then
     MONTADO="true"
 else
@@ -145,7 +190,7 @@ if [[ "$RESP" == "s" ]]; then
 
     cat <<EOF | sudo tee "$SERVICE_PATH"
 [Unit]
-Description=Montaje SSHFS para $SrvRemoto
+Description=Montaje SSHFS para $MOUNT_NAME
 After=network-online.target
 Wants=network-online.target
 

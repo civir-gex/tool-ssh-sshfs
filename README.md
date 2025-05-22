@@ -85,5 +85,4 @@ Acciones que realiza:
 
 ## 📬 Autor
 
-Jorge Borja  
-Generado con asistencia de ChatGPT · OpenAI
+Jorge Borja Rojas

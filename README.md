@@ -1,25 +1,38 @@
-# ssh_without_passwd.sh
+# ssh_sshfs.sh
 
-## 📄 Descripción General
+Este script permite:
 
-Este script automatiza la conexión y montaje de carpetas remotas usando **SSHFS** (SSH File System), sin necesidad de ingresar la contraseña cada vez.
-
-### Características:
-
-- Configura el acceso por clave SSH.
-- Monta carpetas remotas mediante `sshfs`.
-- Genera un servicio persistente con `systemd` para montaje automático al arranque.
-- Desmonta y elimina el montaje con una opción de limpieza (`--cleanup`).
-
----
+- Establecer conexión SSH sin contraseña usando llave pública
+- Montar carpetas remotas mediante `sshfs`
+- Crear servicios `systemd` para montajes persistentes
+- Desmontar y limpiar servicios
+- Todo desde una sola herramienta automatizada
 
 ## 🚀 Uso
 
 ```bash
-sudo ./ssh_without_passwd.sh usuario@servidor                # Solo conexión SSH
-sudo ./ssh_without_passwd.sh usuario@servidor /ruta/remota   # Montaje SSHFS interactivo
-sudo ./ssh_without_passwd.sh usuario@servidor --cleanup      # Desmonta y elimina configuración persistente
+/usr/bin/ssh_sshfs.sh usuario@servidor
 ```
+
+- Inicia una conexión SSH sin contraseña (genera y copia llave si no existe)
+
+```bash
+/usr/bin/ssh_sshfs.sh usuario@servidor /ruta/remota
+```
+
+- Monta la carpeta remota en `/mnt/SSHFS/servidor`
+
+```bash
+/usr/bin/ssh_sshfs.sh usuario@servidor /ruta/remota nombre_local
+```
+
+- Monta la carpeta remota en `/mnt/SSHFS/nombre_local`
+
+```bash
+/usr/bin/ssh_sshfs.sh usuario@servidor [nombre_local] --cleanup
+```
+
+- Desmonta y elimina el punto de montaje, el servicio y la carpeta
 
 ---
 
@@ -28,6 +41,7 @@ sudo ./ssh_without_passwd.sh usuario@servidor --cleanup      # Desmonta y elimin
 - Linux con systemd
 - SSH y `ssh-copy-id`
 - `sshfs` (se instalará automáticamente si no está)
+- Permisos para crear servicios `systemd` (con `sudo`)
 
 ---
 
@@ -44,7 +58,7 @@ sudo ./ssh_without_passwd.sh usuario@servidor --cleanup      # Desmonta y elimin
 ## 🧪 Ejemplo de Uso
 
 ```bash
-sudo ./ssh_without_passwd.sh root@192.168.1.100 /data/compartida
+./ssh_without_passwd.sh root@192.168.1.100 /data/compartida
 ```
 
 Al ejecutar, preguntará:
@@ -71,14 +85,13 @@ Acciones que realiza:
 
 - Desmonta la carpeta si está montada.
 - Elimina el servicio `systemd` si existe.
-- Pregunta si deseas borrar el punto de montaje local.
+- Borrar el punto de montaje local.
 
 ---
 
 ## ⚠️ Notas
 
-- Usa `sudo`, **no lo ejecutes directamente como root**.
-- Si el servidor no permite login como `root`, usa otro usuario.
+- **no lo ejecutes directamente como root**.
 - Este script utiliza: `ping`, `ssh`, `sshfs`, `ssh-copy-id`, `systemd`.
 
 ---

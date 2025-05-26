@@ -8,28 +8,30 @@ Este script permite:
 - Desmontar y limpiar servicios
 - Todo desde una sola herramienta automatizada
 
+---
+
 ## 🚀 Uso
 
 ```bash
-/usr/bin/ssh_sshfs.sh usuario@servidor
+./ssh_sshfs.sh usuario@servidor[:puerto]
 ```
 
 - Inicia una conexión SSH sin contraseña (genera y copia llave si no existe)
 
 ```bash
-/usr/bin/ssh_sshfs.sh usuario@servidor /ruta/remota
+./ssh_sshfs.sh usuario@servidor[:puerto] /ruta/remota
 ```
 
-- Monta la carpeta remota en `/mnt/SSHFS/servidor`
+- Monta la carpeta remota en `/mnt/SSHFS/<servidor>`
 
 ```bash
-/usr/bin/ssh_sshfs.sh usuario@servidor /ruta/remota nombre_local
+./ssh_sshfs.sh usuario@servidor[:puerto] /ruta/remota nombre_local
 ```
 
 - Monta la carpeta remota en `/mnt/SSHFS/nombre_local`
 
 ```bash
-/usr/bin/ssh_sshfs.sh usuario@servidor [nombre_local] --cleanup
+./ssh_sshfs.sh usuario@servidor[:puerto] [nombre_local] --cleanup
 ```
 
 - Desmonta y elimina el punto de montaje, el servicio y la carpeta
@@ -38,64 +40,70 @@ Este script permite:
 
 ## 📦 Requisitos
 
-- Linux con systemd
-- SSH y `ssh-copy-id`
+- Linux con `systemd`
+- `ssh` y `ssh-copy-id`
 - `sshfs` (se instalará automáticamente si no está)
-- Permisos para crear servicios `systemd` (con `sudo`)
+- Permisos para crear servicios `systemd` (`sudo` requerido)
 
 ---
 
 ## 📁 Archivos y Rutas Utilizadas
 
-| Ruta                                    | Descripción                                  |
-|-----------------------------------------|----------------------------------------------|
-| `~/.ssh/id_rsa`                         | Clave SSH generada si no existe              |
-| `/mnt/SSHFS/<servidor>`                | Carpeta local de montaje                     |
-| `/etc/systemd/system/sshfs-<servidor>.service` | Servicio systemd generado                    |
+| Ruta                                                | Descripción                                  |
+|-----------------------------------------------------|----------------------------------------------|
+| `~/.ssh/id_rsa`                                     | Clave SSH generada si no existe              |
+| `/mnt/SSHFS/<servidor>`                             | Carpeta local de montaje por defecto         |
+| `/mnt/SSHFS/<nombre_local>`                         | Carpeta local de montaje personalizada       |
+| `/etc/systemd/system/sshfs-<nombre_local>.service`  | Servicio `systemd` generado                  |
 
 ---
 
-## 🧪 Ejemplo de Uso
+## 🧪 Ejemplos
+
+### 1. Conexión SSH sin contraseña
 
 ```bash
-./ssh_without_passwd.sh root@192.168.1.100 /data/compartida
+./ssh_sshfs.sh jorge@192.168.1.100
 ```
 
-Al ejecutar, preguntará:
+### 2. Montaje de carpeta remota en el puerto 22
 
+```bash
+./ssh_sshfs.sh jorge@192.168.1.100 /home/jorge/datos
 ```
-¿Deseas generar el montaje persistente ahora? (s/n)
+
+### 3. Montaje con puerto SSH personalizado
+
+```bash
+./ssh_sshfs.sh jorge@192.168.1.100:2222 /home/jorge/datos datos-local
 ```
 
-Si respondes `s`:
-
-- Crea o desmonta el montaje si ya está activo.
-- Genera y habilita el servicio `systemd`.
-- Lo activa sin necesidad de reiniciar.
+> Montará `/home/jorge/datos` del servidor `192.168.1.100` vía puerto `2222` en `/mnt/SSHFS/datos-local`.
 
 ---
 
 ## 🧹 Modo Limpieza
 
 ```bash
-sudo ./ssh_without_passwd.sh root@192.168.1.100 --cleanup
+./ssh_sshfs.sh jorge@192.168.1.100:2222 datos-local --cleanup
 ```
 
 Acciones que realiza:
 
-- Desmonta la carpeta si está montada.
-- Elimina el servicio `systemd` si existe.
-- Borrar el punto de montaje local.
+- Desmonta la carpeta si está montada
+- Elimina el servicio `systemd` si existe
+- Borra el punto de montaje local
 
 ---
 
 ## ⚠️ Notas
 
-- **no lo ejecutes directamente como root**.
-- Este script utiliza: `ping`, `ssh`, `sshfs`, `ssh-copy-id`, `systemd`.
+- **No ejecutes este script directamente como `root`**: usa `sudo` para preservar la identidad del usuario real.
+- Este script usa: `ping`, `ssh`, `sshfs`, `ssh-copy-id`, `systemd`
+- Todos los montajes se almacenan bajo `/mnt/SSHFS/`
 
 ---
 
 ## 📬 Autor
 
-Jorge Borja Rojas
+**Jorge Borja Rojas**

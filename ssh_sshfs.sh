@@ -12,13 +12,14 @@ function montar(){
         fi
         sudo chmod 755 "$MNT_LOCAL"
     fi
-    msg "Preparando el montaje de $1:$MNT_REMOTO en $MNT_LOCAL\n"
-    # Verifica si ya está montado
+    msg "Preparando el montaje de $USR@$HOST:$MNT_REMOTO en $MNT_LOCAL\n"
+
     if mount | grep -q "on $MNT_LOCAL type fuse.sshfs"; then
         MONTADO="true"
     else
         MONTADO="false"
     fi
+
     msg "Requiere que sea persistente y se cree un servicio (s/n)\n"
     read -r RESP
 
@@ -34,21 +35,20 @@ function montar(){
         msg "Generando $SERVICE_PATH...\n"
         cat <<EOF | sudo tee "$SERVICE_PATH"
 [Unit]
-Description=Montaje SSHFS para $SrvRemoto
+Description=Montaje SSHFS para $HOST
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=sshfs -o reconnect,allow_other,ServerAliveInterval=15,ServerAliveCountMax=3 "$1:$MNT_REMOTO" "$MNT_LOCAL"
+ExecStart=sshfs -o reconnect,allow_other,ServerAliveInterval=15,ServerAliveCountMax=3,port=$PORT $USR@$HOST:$MNT_REMOTO $MNT_LOCAL
 ExecStop=umount $MNT_LOCAL
 User=$USER
 
 [Install]
 WantedBy=multi-user.target
 EOF
-        # Propiedad de la carpeta
         sudo chown $USER:$USER $MNT_LOCAL
         sudo systemctl daemon-reexec
         sudo systemctl daemon-reload
@@ -57,9 +57,8 @@ EOF
     else
         if [[ "$MONTADO" == "false" ]]; then
             echo "Montando carpeta remota..."
-            # Propiedad de la carpeta
-            sudo chown $USER:$USER $MNT_LOCAL            
-            sshfs -o allow_other "$1:$MNT_REMOTO" "$MNT_LOCAL"
+            sudo chown $USER:$USER $MNT_LOCAL
+            sshfs -o allow_other,port=$PORT "$USR@$HOST:$MNT_REMOTO" "$MNT_LOCAL"
             if [ $? -ne 0 ]; then
                 echo "Error al montar la carpeta remota."
                 exit 1
@@ -102,33 +101,41 @@ clear
 # Detectar argumentos
 ARGS=("$@")
 NUM_ARGS=$#
-SrvRemoto=$(echo -ne "$1" | cut -d@ -f2)
-MNT_REMOTO="$2"
-MNT_LOCAL="/mnt/SSHFS/$SrvRemoto"
 
-# Verifica si al menos se pasó 1 argumento
+# Validar argumentos
 if [ "$#" -lt 1 ]; then
     msg "Conexión SSH sin contraseña a través de llave ssh\nTambien se puede montar una carpeta remota del servidor mediante SSHFS\n\n"
     msg "Uso:\n"
-    msg "  Para conexión SSH: $0 usuario@servidor\n"
-    msg "  Para montar SSHFS: $0 usuario@servidor /carpeta/remota [carpeta_local]\n"
-    msg "  Para desmontar y limpiar: $0 usuario@servidor [carpeta_local] --cleanup\n\n"
-    msg "  **Los montaje se realizan en /mnt/SSHFS/ y la carpeta sera propiedad del usuario ejecutor del script\n\n\n"
+    msg "  Para conexión SSH: $0 usuario@servidor[:puerto]\n"
+    msg "  Para montar SSHFS: $0 usuario@servidor[:puerto] /carpeta/remota [carpeta_local]\n"
+    msg "  Para desmontar y limpiar: $0 usuario@servidor[:puerto] [carpeta_local] --cleanup\n\n"
+    msg "  **Los montajes se realizan en /mnt/SSHFS/ y la carpeta será propiedad del usuario ejecutor del script\n\n\n"
     exit 1
 fi
+
+# Extraer usuario, host y puerto (si existe)
+USR_HOST_PORT="$1"
+USR=$(echo "$USR_HOST_PORT" | cut -d@ -f1)
+HOST_PORT=$(echo "$USR_HOST_PORT" | cut -d@ -f2)
+HOST=$(echo "$HOST_PORT" | cut -d: -f1)
+PORT=$(echo "$HOST_PORT" | cut -s -d: -f2)
+PORT=${PORT:-22}
+
+SrvRemoto="$HOST"
+MNT_REMOTO="$2"
+MNT_LOCAL="/mnt/SSHFS/$SrvRemoto"
 
 # Detectar si se desea limpiar
 for arg in "${ARGS[@]}"; do
     ((i++))
     if [[ "$arg" == "--cleanup" ]]; then
         if [[ $i -ne $NUM_ARGS ]]; then
-            msg "$arg debe ir al final.\n Ejecuta $0 sin parametros para ayuda\n"
+            msg "$arg debe ir al final.\n Ejecuta $0 sin parámetros para ayuda\n"
             exit 1
         fi
         if [[ $i -eq 3 ]]; then
             MNT_LOCAL="/mnt/SSHFS/$2"
         fi
-
         SERVICE_NAME="sshfs-${MNT_LOCAL#/mnt/SSHFS/}.service"
         SERVICE_PATH="/etc/systemd/system/$SERVICE_NAME"
         limpiar
@@ -137,10 +144,10 @@ for arg in "${ARGS[@]}"; do
 done
 
 # Verifica si el servidor está en línea
-msg "Verificando conectividad con $SrvRemoto..."
-ping -c 1 -W 2 "$SrvRemoto" > /dev/null
+msg "Verificando conectividad con $HOST..."
+ping -c 1 -W 2 "$HOST" > /dev/null
 if [ $? -ne 0 ]; then
-    msg "❌ Error: No se puede contactar al servidor $SrvRemoto\n"
+    msg "❌ Error: No se puede contactar al servidor $HOST\n"
     exit 1
 fi
 
@@ -154,10 +161,10 @@ fi
 
 # Verifica conexión sin contraseña
 msg "Verificando si se puede conectar sin contraseña..."
-ssh -o BatchMode=yes -o ConnectTimeout=5 "$1" 'exit' 2>/dev/null
+ssh -p "$PORT" -o BatchMode=yes -o ConnectTimeout=5 "$USR@$HOST" 'exit' 2>/dev/null
 if [ $? -ne 0 ]; then
     msg "No se puede conectar sin contraseña. Copiando clave pública al servidor..."
-    ssh-copy-id "$1"
+    ssh-copy-id -p "$PORT" "$USR@$HOST"
     if [ $? -ne 0 ]; then
         msg "❌ Error: No se pudo copiar la clave pública. Verifica acceso SSH y vuelve a intentar.\n"
         exit 1
@@ -165,7 +172,7 @@ if [ $? -ne 0 ]; then
 else
     msg "Conexión sin contraseña verificada correctamente.\n"
     if [[ $NUM_ARGS -eq 1 ]]; then
-        ssh "$1"
+        ssh -p "$PORT" "$USR@$HOST"
         clear
         exit $?
     fi
@@ -186,15 +193,15 @@ if ! command -v sshfs &> /dev/null; then
     fi
 fi
 
+# Si segundo argumento es ruta remota absoluta
 if [[ "$2" =~ ^/ ]]; then
     if [[ $NUM_ARGS -eq 3 ]]; then
         MNT_LOCAL="/mnt/SSHFS/$3"
     fi
     SERVICE_NAME="sshfs-${MNT_LOCAL#/mnt/SSHFS/}.service"
     SERVICE_PATH="/etc/systemd/system/$SERVICE_NAME"
-    montar $1 
+    montar "$USR@$HOST"
 else 
     msg "Para poder montar el directorio remoto debes proporcionar el PATH completo (/carpeta/remota)\n"
     exit 1
 fi
-
